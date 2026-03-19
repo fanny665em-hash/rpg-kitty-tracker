@@ -22,7 +22,7 @@
 <script type="text/babel" data-type="module">
 // --- 1. FIREBASE ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCCb8BUJyL3dWgvroW5toXIc7R-FuTwMI4",
@@ -82,9 +82,10 @@ function App(){
 
   const monthKey=`month:${yr}-${String(mo+1).padStart(2,"00")}`;
 
-  // --- 3. CARGA AUTOMÁTICA DESDE FIREBASE ---
+  // --- 3. CARGA CORREGIDA: LECTURA ÚNICA ---
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "usuarios", USER_ID), (docSnap) => {
+    async function cargarDatos() {
+      const docSnap = await getDoc(doc(db, "usuarios", USER_ID));
       if (docSnap.exists()) {
         const d = docSnap.data();
         if(d.profile) { setProfile(d.profile); setTempProfile(d.profile); }
@@ -99,8 +100,8 @@ function App(){
           setMonthData({daily:{},weeklyQuests:defaultWeekly(),monthlyQuest:defaultMonthly(),notes:""});
         }
       }
-    });
-    return () => unsub();
+    }
+    cargarDatos();
   }, [monthKey]);
 
   // --- 4. GUARDADO EN FIREBASE ---
@@ -144,8 +145,28 @@ function App(){
   });
 
   const changeMonth=(dir)=>{let nm=mo+dir,ny=yr;if(nm<0){nm=11;ny--;}if(nm>11){nm=0;ny++;}setMo(nm);setYr(ny);};
-  const toggleHabit=(day,idx)=>{const nd={...daily};if(!nd[day])nd[day]=Array(MAX_HABITS).fill(false);else nd[day]=[...nd[day]];nd[day][idx]=!nd[day][idx];saveMonth({...monthData,daily:nd});};
-  const toggleWeekly=(week,idx)=>{const nw={...weeklyQuests,[week]:{...weeklyQuests[week],done:[...weeklyQuests[week].done]}};nw[week].done[idx]=!nw[week].done[idx];saveMonth({...monthData,weeklyQuests:nw});};
+  const toggleHabit=(day,idx)=>{
+    setMonthData(prev => {
+      const nd={...prev.daily};
+      if(!nd[day])nd[day]=Array(MAX_HABITS).fill(false);
+      else nd[day]=[...nd[day]];
+      nd[day][idx]=!nd[day][idx];
+      const newData = {...prev, daily:nd};
+      saveMonth(newData);
+      return newData;
+    });
+  };
+  
+  const toggleWeekly=(week,idx)=>{
+    setMonthData(prev => {
+      const nw={...prev.weeklyQuests,[week]:{...prev.weeklyQuests[week],done:[...prev.weeklyQuests[week].done]}};
+      nw[week].done[idx]=!nw[week].done[idx];
+      const newData = {...prev, weeklyQuests:nw};
+      saveMonth(newData);
+      return newData;
+    });
+  };
+  
   const setWeeklyTask=(week,idx,val)=>{const nw={...weeklyQuests,[week]:{...weeklyQuests[week],tasks:[...weeklyQuests[week].tasks]}};nw[week].tasks[idx]=val;saveMonth({...monthData,weeklyQuests:nw});};
   const toggleMonthly=()=>{saveMonth({...monthData,monthlyQuest:{...monthlyQuest,done:!monthlyQuest.done}});};
   const setMonthlyTask=(val)=>{saveMonth({...monthData,monthlyQuest:{...monthlyQuest,task:val}});};
@@ -320,7 +341,13 @@ function App(){
               onChangeTitle={val=>{const g=[...annualGoals];g[gi]={...g[gi],title:val};saveAnnual(g);}}
               onToggleGoal={()=>{const g=[...annualGoals];g[gi]={...g[gi],done:!g[gi].done};saveAnnual(g);}}
               onChangeSubtask={(si,val)=>{const g=[...annualGoals];g[gi]={...g[gi],subtasks:[...g[gi].subtasks]};g[gi].subtasks[si]=val;saveAnnual(g);}}
-              onToggleSubtask={(si)=>{const g=[...annualGoals];g[gi]={...g[gi],subtasksDone:[...g[gi].subtasksDone]};g[gi].subtasksDone[si]=!g[gi].subtasksDone[si];saveAnnual(g);}}
+              onToggleSubtask={(si)=>{
+                const g=[...annualGoals];
+                // Crear una copia nueva del array de subtasksDone para evitar bugs al tildar rápido
+                g[gi] = {...g[gi], subtasksDone: [...g[gi].subtasksDone]};
+                g[gi].subtasksDone[si]=!g[gi].subtasksDone[si];
+                saveAnnual(g);
+              }}
             />
           ))}
         </div>
@@ -337,7 +364,12 @@ function App(){
                 <input style={{...S.input,flex:1,color:sq.done?"#4ade80":"#f0e8ff",textDecoration:sq.done?"line-through":"none"}}
                   placeholder={`Side quest ${i+1}`} value={sq.task}
                   onChange={e=>{const q=[...sideQuests];q[i]={...q[i],task:e.target.value};saveSide(q);}}/>
-                <div style={{...S.check(sq.done),cursor:"pointer",flexShrink:0}} onClick={()=>{const q=[...sideQuests];q[i]={...q[i],done:!q[i].done};saveSide(q);}}>
+                <div style={{...S.check(sq.done),cursor:"pointer",flexShrink:0}} onClick={()=>{
+                  // Evitar pisar el estado al hacer click rápido
+                  const q=[...sideQuests];
+                  q[i]={...q[i],done:!q[i].done};
+                  saveSide(q);
+                }}>
                   {sq.done?"✓":""}
                 </div>
                 {sq.done&&<span style={{...S.xpTag,whiteSpace:"nowrap"}}>+{XP_SIDE}</span>}
