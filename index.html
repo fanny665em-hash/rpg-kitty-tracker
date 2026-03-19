@@ -1,112 +1,489 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>RPG Kitty Tracker ⚔️</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-    <style>
-        /* Mantenemos tus estilos oscuros originales */
-        *{box-sizing:border-box;margin:0;padding:0;}
-        body{background:#0a0118;color:#f0e8ff;font-family:'Courier New',monospace;}
-        .card {background:#150330;border:1px solid #2d1060;border-radius:10px;padding:16px;margin-bottom:16px;}
-        input, textarea {background:#0f0225;border:1px solid #2d1060;color:white;padding:10px;width:100%;border-radius:7px;}
-        button {background:#7c3aed;color:white;padding:10px 20px;border:none;border-radius:7px;cursor:pointer;font-weight:bold;}
-        .xp-bar {height:12px;background:#1a0838;border-radius:6px;overflow:hidden;border:1px solid #3d1a6e;}
-        .xp-fill {height:100%;background:linear-gradient(90deg,#6d28d9,#a855f7);transition:width 0.8s ease;}
-    </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RPG Kitty Tracker ⚔️</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#0a0118;color:#f0e8ff;font-family:'Courier New',monospace;}
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-track{background:#0a0118;}
+  ::-webkit-scrollbar-thumb{background:#4c1d95;border-radius:3px;}
+  input::placeholder,textarea::placeholder{color:#4c1d95;}
+  input:focus,textarea:focus{border-color:#7c3aed !important;}
+</style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel" data-type="module">
-    // --- 1. CONEXIÓN FIREBASE ---
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+// --- 1. FIREBASE ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    const firebaseConfig = {
-        apiKey: "AIzaSyCCb8BUJyL3dWgvroW5toXIc7R-FuTwMI4",
-        authDomain: "rpg-kitty-tracker.firebaseapp.com",
-        projectId: "rpg-kitty-tracker",
-        storageBucket: "rpg-kitty-tracker.firebasestorage.app",
-        messagingSenderId: "106070405529",
-        appId: "1:106070405529:web:df6322b6473ba7468f7f98"
-    };
+const firebaseConfig = {
+  apiKey: "AIzaSyCCb8BUJyL3dWgvroW5toXIc7R-FuTwMI4",
+  authDomain: "rpg-kitty-tracker.firebaseapp.com",
+  projectId: "rpg-kitty-tracker",
+  storageBucket: "rpg-kitty-tracker.firebasestorage.app",
+  messagingSenderId: "106070405529",
+  appId: "1:106070405529:web:df6322b6473ba7468f7f98"
+};
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const USER_ID = "jugador_1"; // Tu ID de partida
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const USER_ID = "jugador_1"; 
 
-    const { useState, useEffect } = React;
+const { useState, useEffect, useCallback } = React;
 
-    function App() {
-        // Estados originales
-        const [profile, setProfile] = useState({name: "", age: ""});
-        const [totalXP, setTotalXP] = useState(0);
-        const [habits, setHabits] = useState(Array(15).fill(""));
+// --- 2. CONSTANTES DEL JUEGO ---
+const MONTHS_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const MAX_HABITS = 15;
+const LEVEL_XP = [0,100,250,450,700,1000,1350,1750,2200,2700,3250];
+const XP_DAILY=1, XP_WEEKLY=3, XP_MONTHLY=5, XP_SIDE=5, XP_ANNUAL=10;
+const LEVEL_EMOJIS = ["","🥉","🥈","🥇","🌟","💎","👑","🔥","⚡","🌙","🏆"];
 
-        // --- 2. CARGA AUTOMÁTICA ---
-        useEffect(() => {
-            const unsub = onSnapshot(doc(db, "usuarios", USER_ID), (docSnap) => {
-                if (docSnap.exists()) {
-                    const d = docSnap.data();
-                    if(d.profile) setProfile(d.profile);
-                    if(d.totalXP) setTotalXP(d.totalXP);
-                    if(d.habits) setHabits(d.habits);
-                }
-            });
-            return () => unsub();
-        }, []);
+function getDaysInMonth(y,m){return new Date(y,m+1,0).getDate();}
+function calcLevel(xp){let l=1;for(let i=LEVEL_XP.length-1;i>=0;i--){if(xp>=LEVEL_XP[i]){l=i+1;break;}}return Math.min(l,10);}
+function calcProgress(xp){const l=calcLevel(xp);if(l>=10)return 1;const c=LEVEL_XP[l-1]||0,n=LEVEL_XP[l]||9999;return Math.min((xp-c)/(n-c),1);}
 
-        // --- 3. GUARDADO AUTOMÁTICO ---
-        const sync = (data) => setDoc(doc(db, "usuarios", USER_ID), data, { merge: true });
+const defaultWeekly=()=>({
+  1:{tasks:["","","","",""],done:[false,false,false,false,false]},
+  2:{tasks:["","","","",""],done:[false,false,false,false,false]},
+  3:{tasks:["","","","",""],done:[false,false,false,false,false]},
+  4:{tasks:["","","","",""],done:[false,false,false,false,false]},
+});
+const defaultMonthly=()=>({task:"",done:false});
+const defaultAnnualGoals=()=>Array(10).fill(null).map(()=>({title:"",done:false,subtasks:["","","",""],subtasksDone:[false,false,false,false]}));
+const defaultSideQuests=()=>Array(15).fill(null).map(()=>({task:"",done:false}));
+const defaultRewards=()=>Array(10).fill("");
 
-        const handleSave = () => {
-            sync({ profile, totalXP, habits });
-            alert("¡Progreso guardado en la nube! ☁️");
-        };
+function App(){
+  const now=new Date();
+  const [yr,setYr]=useState(now.getFullYear());
+  const [mo,setMo]=useState(now.getMonth());
+  const [tab,setTab]=useState("tracker");
+  
+  const [profile,setProfile]=useState({name:"",age:""});
+  const [habits,setHabits]=useState(Array(MAX_HABITS).fill(""));
+  const [rewards,setRewards]=useState(defaultRewards());
+  const [monthData,setMonthData]=useState({daily:{},weeklyQuests:defaultWeekly(),monthlyQuest:defaultMonthly(),notes:""});
+  const [annualGoals,setAnnualGoals]=useState(defaultAnnualGoals());
+  const [sideQuests,setSideQuests]=useState(defaultSideQuests());
+  const [allMonthsXP,setAllMonthsXP]=useState({});
+  
+  const [saved,setSaved]=useState(false);
+  const [tempProfile,setTempProfile]=useState({name:"",age:""});
+  const [tempHabits,setTempHabits]=useState(Array(MAX_HABITS).fill(""));
+  const [tempRewards,setTempRewards]=useState(defaultRewards());
 
-        return (
-            <div style={{padding: '20px', maxWidth: '600px', margin: 'auto'}}>
-                <header style={{textAlign: 'center', marginBottom: '30px'}}>
-                    <h1 style={{color: '#c084fc'}}>⚔️ RPG KITTY TRACKER ⚔️</h1>
-                    <p style={{fontSize: '12px', color: '#8b5cf6'}}>NIVEL: {Math.floor(totalXP/100) + 1} | XP: {totalXP}</p>
-                    <div className="xp-bar"><div className="xp-fill" style={{width: `${totalXP % 100}%`}}></div></div>
-                </header>
+  const monthKey=`month:${yr}-${String(mo+1).padStart(2,"00")}`;
 
-                <div className="card">
-                    <h3>👤 PERFIL DEL HÉROE</h3>
-                    <input 
-                        placeholder="Nombre de tu Kitty Guerrero" 
-                        value={profile.name} 
-                        onChange={e => setProfile({...profile, name: e.target.value})} 
-                    />
-                </div>
+  // --- 3. CARGA AUTOMÁTICA DESDE FIREBASE ---
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "usuarios", USER_ID), (docSnap) => {
+      if (docSnap.exists()) {
+        const d = docSnap.data();
+        if(d.profile) { setProfile(d.profile); setTempProfile(d.profile); }
+        if(d.habits) { setHabits(d.habits); setTempHabits(d.habits); }
+        if(d.rewards) { setRewards(d.rewards); setTempRewards(d.rewards); }
+        if(d.annualGoals) setAnnualGoals(d.annualGoals);
+        if(d.sideQuests) setSideQuests(d.sideQuests);
+        if(d.allMonthsXP) setAllMonthsXP(d.allMonthsXP);
+        if(d.months && d.months[monthKey]) {
+          setMonthData(d.months[monthKey]);
+        } else {
+          setMonthData({daily:{},weeklyQuests:defaultWeekly(),monthlyQuest:defaultMonthly(),notes:""});
+        }
+      }
+    });
+    return () => unsub();
+  }, [monthKey]);
 
-                <div className="card">
-                    <h3>🗡️ MISIONES DIARIAS</h3>
-                    {habits.slice(0, 5).map((h, i) => (
-                        <div key={i} style={{display: 'flex', gap: '10px', marginBottom: '10px'}}>
-                            <input 
-                                placeholder={`Hábito ${i+1}`} 
-                                value={h} 
-                                onChange={e => {
-                                    const nh = [...habits]; nh[i] = e.target.value; setHabits(nh);
-                                }} 
-                            />
-                            <button onClick={() => setTotalXP(totalXP + 10)}>+10 XP</button>
-                        </div>
-                    ))}
-                </div>
+  // --- 4. GUARDADO EN FIREBASE ---
+  const syncToCloud = async (updates) => {
+    await setDoc(doc(db, "usuarios", USER_ID), updates, { merge: true });
+  };
 
-                <button onClick={handleSave} style={{width: '100%', background: '#22c55e'}}>💾 SINCRONIZAR TODO</button>
+  function calcMonthXP(data){
+    let xp=0;
+    Object.values(data.daily||{}).forEach(arr=>arr.forEach(d=>{if(d)xp+=XP_DAILY;}));
+    Object.values(data.weeklyQuests||{}).forEach(wq=>wq.done.forEach(d=>{if(d)xp+=XP_WEEKLY;}));
+    if(data.monthlyQuest?.done) xp+=XP_MONTHLY;
+    return xp;
+  }
+
+  const saveMonth = useCallback((data)=>{
+    setMonthData(data);
+    const mxp=calcMonthXP(data);
+    const newAllXP={...allMonthsXP,[monthKey]:mxp};
+    setAllMonthsXP(newAllXP);
+    syncToCloud({
+      allMonthsXP: newAllXP,
+      [`months.${monthKey}`]: data
+    });
+  },[monthKey,allMonthsXP]);
+
+  const annualXP=annualGoals.reduce((acc,g)=>{if(g.done)acc+=XP_ANNUAL;g.subtasksDone.forEach(d=>{if(d)acc+=XP_ANNUAL;});return acc;},0);
+  const sideXP=sideQuests.reduce((acc,sq)=>sq.done?acc+XP_SIDE:acc,0);
+  const habitsXP=Object.values(allMonthsXP).reduce((a,b)=>a+b,0);
+  const totalXP=habitsXP+annualXP+sideXP;
+  const level=calcLevel(totalXP);
+  const xpProgress=calcProgress(totalXP);
+
+  const {daily={},weeklyQuests=defaultWeekly(),monthlyQuest=defaultMonthly(),notes=""}=monthData;
+  const daysInMonth=getDaysInMonth(yr,mo);
+  const todayDay=now.getFullYear()===yr&&now.getMonth()===mo?now.getDate():null;
+  const activeHabits=habits.filter(h=>h.trim());
+  const habitProgress=habits.map((_,idx)=>{
+    let c=0;Object.values(daily).forEach(arr=>{if(arr[idx])c++;});
+    return daysInMonth>0?Math.round((c/daysInMonth)*100):0;
+  });
+
+  const changeMonth=(dir)=>{let nm=mo+dir,ny=yr;if(nm<0){nm=11;ny--;}if(nm>11){nm=0;ny++;}setMo(nm);setYr(ny);};
+  const toggleHabit=(day,idx)=>{const nd={...daily};if(!nd[day])nd[day]=Array(MAX_HABITS).fill(false);else nd[day]=[...nd[day]];nd[day][idx]=!nd[day][idx];saveMonth({...monthData,daily:nd});};
+  const toggleWeekly=(week,idx)=>{const nw={...weeklyQuests,[week]:{...weeklyQuests[week],done:[...weeklyQuests[week].done]}};nw[week].done[idx]=!nw[week].done[idx];saveMonth({...monthData,weeklyQuests:nw});};
+  const setWeeklyTask=(week,idx,val)=>{const nw={...weeklyQuests,[week]:{...weeklyQuests[week],tasks:[...weeklyQuests[week].tasks]}};nw[week].tasks[idx]=val;saveMonth({...monthData,weeklyQuests:nw});};
+  const toggleMonthly=()=>{saveMonth({...monthData,monthlyQuest:{...monthlyQuest,done:!monthlyQuest.done}});};
+  const setMonthlyTask=(val)=>{saveMonth({...monthData,monthlyQuest:{...monthlyQuest,task:val}});};
+  const setNotes=(val)=>{saveMonth({...monthData,notes:val});};
+  const saveAnnual=(goals)=>{setAnnualGoals(goals);syncToCloud({annualGoals: goals});};
+  const saveSide=(quests)=>{setSideQuests(quests);syncToCloud({sideQuests: quests});};
+  const saveProfile=()=>{
+    setProfile(tempProfile);setHabits(tempHabits);setRewards(tempRewards);
+    syncToCloud({profile: tempProfile, habits: tempHabits, rewards: tempRewards});
+    setSaved(true);setTimeout(()=>setSaved(false),2000);
+  };
+
+  const monthXP=calcMonthXP(monthData);
+
+  // --- ESTILOS DE LA APP ---
+  const S={
+    app:{background:"#0a0118",minHeight:"100vh",fontFamily:"'Courier New',monospace",color:"#f0e8ff"},
+    header:{background:"linear-gradient(180deg,#180540 0%,#0a0118 100%)",borderBottom:"2px solid #7c3aed",padding:"16px"},
+    xpBar:{height:12,background:"#1a0838",borderRadius:6,overflow:"hidden",flex:1,minWidth:80,border:"1px solid #3d1a6e"},
+    xpFill:{height:"100%",background:"linear-gradient(90deg,#6d28d9,#a855f7,#d946ef)",borderRadius:6,transition:"width 0.8s ease",boxShadow:"0 0 10px #a855f7"},
+    nav:{display:"flex",gap:0,borderBottom:"2px solid #1e0a3c",overflowX:"auto"},
+    navBtn:(a)=>({padding:"12px 16px",background:a?"#1e0a3c":"transparent",border:"none",borderBottom:a?"3px solid #a855f7":"3px solid transparent",color:a?"#f0abfc":"#8b5cf6",cursor:"pointer",fontFamily:"inherit",letterSpacing:1,fontSize:13,marginBottom:-2,whiteSpace:"nowrap",flexShrink:0,fontWeight:a?"bold":"normal"}),
+    section:{padding:16},
+    card:{background:"#150330",border:"1px solid #2d1060",borderRadius:10,padding:16,marginBottom:16},
+    cardTitle:{color:"#c084fc",fontSize:14,letterSpacing:2,marginBottom:14,textTransform:"uppercase",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontWeight:"bold"},
+    arrow:{background:"#1e0a3c",border:"1px solid #4c1d95",color:"#a855f7",width:34,height:34,borderRadius:7,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"},
+    table:{borderCollapse:"collapse",width:"100%",fontSize:11},
+    th:{padding:"4px 5px",color:"#8b5cf6",fontWeight:"bold",letterSpacing:1,textAlign:"center",borderBottom:"1px solid #2d1060",whiteSpace:"nowrap"},
+    td:{padding:"2px",textAlign:"center",borderBottom:"1px solid #0f0220"},
+    habitName:{textAlign:"left",padding:"4px 8px 4px 4px",color:"#ddd6fe",whiteSpace:"nowrap",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",borderBottom:"1px solid #0f0220",fontSize:12,fontWeight:"bold"},
+    cell:(c,t)=>({width:20,height:20,borderRadius:4,cursor:"pointer",background:c?"#7c3aed":t?"#1e0a3c":"#0a0118",border:c?"2px solid #c084fc":t?"1px solid #4c1d95":"1px solid #1e0a3c",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,transition:"all 0.1s",margin:1,fontWeight:"bold",userSelect:"none"}),
+    input:{background:"#0f0225",border:"1px solid #2d1060",borderRadius:7,color:"#f0e8ff",padding:"9px 12px",fontFamily:"inherit",fontSize:13,width:"100%",outline:"none",boxSizing:"border-box",lineHeight:1.4},
+    textarea:{background:"#0f0225",border:"1px solid #2d1060",borderRadius:7,color:"#f0e8ff",padding:"10px 12px",fontFamily:"inherit",fontSize:13,width:"100%",outline:"none",boxSizing:"border-box",lineHeight:1.6,resize:"vertical",minHeight:140},
+    questRow:(done)=>({display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:done?"#0f1f0f":"#0f0225",border:`1px solid ${done?"#16a34a":"#2d1060"}`,borderRadius:7,marginBottom:6,cursor:"pointer",transition:"all 0.15s"}),
+    check:(done)=>({width:22,height:22,borderRadius:4,border:`2px solid ${done?"#22c55e":"#4c1d95"}`,background:done?"#22c55e":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:"bold",userSelect:"none"}),
+    btn:(v)=>({padding:"10px 20px",borderRadius:7,border:"none",cursor:"pointer",fontFamily:"inherit",letterSpacing:2,fontSize:13,fontWeight:"bold",background:v==="primary"?"#7c3aed":v==="success"?"#22c55e":"#1e0a3c",color:v==="success"?"#0a0118":"#f0e8ff"}),
+    weekTab:(a)=>({padding:"7px 16px",background:a?"#4c1d95":"#0f0225",border:`1px solid ${a?"#7c3aed":"#2d1060"}`,borderRadius:7,cursor:"pointer",color:a?"#f0abfc":"#8b5cf6",fontFamily:"inherit",fontSize:12,letterSpacing:1,fontWeight:a?"bold":"normal"}),
+    statBox:{background:"#0f0225",border:"1px solid #2d1060",borderRadius:10,padding:"12px 14px",textAlign:"center"},
+    xpTag:{color:"#fbbf24",fontSize:11,background:"#1c1505",border:"1px solid #92400e",borderRadius:5,padding:"2px 8px",display:"inline-block",fontWeight:"bold"},
+    pbar:()=>({height:6,background:"#0a0118",borderRadius:3,overflow:"hidden",marginTop:4}),
+    pfill:(pct)=>({height:"100%",background:pct===100?"#22c55e":"linear-gradient(90deg,#4c1d95,#7c3aed)",width:`${pct}%`,borderRadius:3,transition:"width 0.6s"}),
+    label:{color:"#8b5cf6",fontSize:11,letterSpacing:2,display:"block",marginBottom:6,fontWeight:"bold"},
+  };
+
+  return (
+    <div style={S.app}>
+      {/* HEADER PRINCIPAL */}
+      <div style={S.header}>
+        <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <div style={{width:56,height:56,borderRadius:10,background:"linear-gradient(135deg,#6d28d9,#4c1d95)",border:"2px solid #a78bfa",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>⚔️</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
+              <span style={{color:"#f0abfc",fontSize:18,fontWeight:"bold",letterSpacing:2}}>{profile.name||"HÉROE"}</span>
+              <span style={{background:"#4c1d95",border:"1px solid #7c3aed",borderRadius:6,padding:"2px 10px",color:"#c084fc",fontSize:13,letterSpacing:2,fontWeight:"bold"}}>{LEVEL_EMOJIS[level]} LVL {level}</span>
+              <span style={S.xpTag}>⚡ {totalXP} XP</span>
             </div>
-        );
-    }
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={S.xpBar}><div style={{...S.xpFill,width:`${xpProgress*100}%`}}/></div>
+              <span style={{color:"#8b5cf6",fontSize:11,whiteSpace:"nowrap",fontWeight:"bold"}}>{level<10?`→ LVL ${level+1}`:"MAX"}</span>
+            </div>
+            {rewards[level-1]&&(
+              <div style={{marginTop:5,color:"#fbbf24",fontSize:12,background:"#1c1505",border:"1px solid #92400e",borderRadius:5,padding:"3px 10px",display:"inline-block",fontWeight:"bold"}}>
+                🎁 Premio: {rewards[level-1]}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+      {/* BARRA DE NAVEGACIÓN */}
+      <div style={S.nav}>
+        {[["tracker","📅 MES"],["quests","⚡ QUESTS"],["annual","🏆 ANUALES"],["side","🌟 SIDE"],["stats","📊 STATS"],["config","⚙️ CONFIG"]].map(([id,label])=>(
+          <button key={id} style={S.navBtn(tab===id)} onClick={()=>{setTab(id);if(id==="config"){setTempProfile(profile);setTempHabits([...habits]);setTempRewards([...rewards]);}}}>{label}</button>
+        ))}
+      </div>
+
+      {/* --- PESTAÑA: TRACKER MENSUAL --- */}
+      {tab==="tracker"&&(
+        <div style={S.section}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,justifyContent:"center"}}>
+            <button style={S.arrow} onClick={()=>changeMonth(-1)}>◀</button>
+            <div style={{color:"#f0abfc",fontSize:17,fontWeight:"bold",letterSpacing:3,minWidth:170,textAlign:"center"}}>{MONTHS_ES[mo]} {yr}</div>
+            <button style={S.arrow} onClick={()=>changeMonth(1)}>▶</button>
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:14,justifyContent:"center",flexWrap:"wrap"}}>
+            {[["XP MES",monthXP],["XP ANUALES",annualXP],["SIDE XP",sideXP],["TOTAL",totalXP]].map(([l,v])=>(
+              <div key={l} style={{background:"#0f0225",border:"1px solid #2d1060",borderRadius:7,padding:"6px 14px",textAlign:"center"}}>
+                <div style={{color:"#fbbf24",fontSize:16,fontWeight:"bold"}}>{v}</div>
+                <div style={{color:"#8b5cf6",fontSize:10,letterSpacing:2,marginTop:2,fontWeight:"bold"}}>{l}</div>
+              </div>
+            ))}
+          </div>
+          {activeHabits.length===0?(
+            <div style={{textAlign:"center",padding:40,color:"#4c1d95"}}>
+              <div style={{fontSize:36,marginBottom:14}}>⚔️</div>
+              <div style={{letterSpacing:2,fontSize:14}}>¡Configurá tus hábitos primero!</div>
+              <button style={{...S.btn("primary"),marginTop:16}} onClick={()=>{setTab("config");setTempProfile(profile);setTempHabits([...habits]);setTempRewards([...rewards]);}}>IR A CONFIG</button>
+            </div>
+          ):(
+            <div style={S.card}>
+              <div style={S.cardTitle}>🗡️ Quests Diarias <span style={S.xpTag}>+{XP_DAILY} XP/día</span></div>
+              <div style={{overflowX:"auto"}}>
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      <th style={{...S.th,textAlign:"left",minWidth:100}}>HÁBITO</th>
+                      {Array.from({length:daysInMonth},(_,i)=>(
+                        <th key={i} style={{...S.th,color:todayDay===i+1?"#f0abfc":"#8b5cf6",fontSize:todayDay===i+1?12:11}}>{i+1}</th>
+                      ))}
+                      <th style={S.th}>%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {habits.map((habit,hIdx)=>{
+                      if(!habit.trim()) return null;
+                      const pct=habitProgress[hIdx];
+                      return(
+                        <tr key={hIdx}>
+                          <td style={S.habitName} title={habit}>{habit}</td>
+                          {Array.from({length:daysInMonth},(_,d)=>{
+                            const day=d+1,checked=!!(daily[day]&&daily[day][hIdx]);
+                            return(<td key={d} style={S.td}><div style={S.cell(checked,todayDay===day)} onClick={()=>toggleHabit(day,hIdx)}>{checked?"✓":""}</div></td>);
+                          })}
+                          <td style={S.td}>
+                            <div style={{fontSize:10,color:pct===100?"#22c55e":"#a78bfa",fontWeight:"bold"}}>{pct}%</div>
+                            <div style={S.pbar(pct)}><div style={S.pfill(pct)}/></div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          <div style={S.card}>
+            <div style={S.cardTitle}>📝 Notas de {MONTHS_ES[mo]}</div>
+            <textarea style={S.textarea} placeholder={`¿Cómo fue ${MONTHS_ES[mo]}? Reflexiones, logros...`} value={notes} onChange={e=>setNotes(e.target.value)}/>
+          </div>
+        </div>
+      )}
+
+      {/* --- PESTAÑA: QUESTS --- */}
+      {tab==="quests"&&(
+        <div style={S.section}>
+          <div style={S.card}>
+            <div style={S.cardTitle}>🏆 Quest Mensual <span style={S.xpTag}>+{XP_MONTHLY} XP</span></div>
+            <input style={{...S.input,marginBottom:12}} placeholder="¿Cuál es tu objetivo del mes?" value={monthlyQuest.task} onChange={e=>setMonthlyTask(e.target.value)}/>
+            <div style={S.questRow(monthlyQuest.done)} onClick={toggleMonthly}>
+              <div style={S.check(monthlyQuest.done)}>{monthlyQuest.done?"✓":""}</div>
+              <div style={{color:monthlyQuest.done?"#22c55e":"#ddd6fe",flex:1,textDecoration:monthlyQuest.done?"line-through":"none",fontSize:14}}>{monthlyQuest.task||"Sin objetivo mensual todavía"}</div>
+              {monthlyQuest.done&&<span style={S.xpTag}>+{XP_MONTHLY} XP ✨</span>}
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={S.cardTitle}>⚡ Quests Semanales <span style={S.xpTag}>+{XP_WEEKLY} XP c/u</span></div>
+            <WeeklySection weeklyQuests={weeklyQuests} toggleWeekly={toggleWeekly} setWeeklyTask={setWeeklyTask} S={S}/>
+          </div>
+        </div>
+      )}
+
+      {/* --- PESTAÑA: ANUALES --- */}
+      {tab==="annual"&&(
+        <div style={S.section}>
+          <div style={{...S.card,background:"#0a1a0a",borderColor:"#14532d"}}>
+            <div style={{color:"#4ade80",fontSize:14,letterSpacing:2,marginBottom:6,fontWeight:"bold"}}>🏆 METAS ANUALES {yr}</div>
+            <div style={{color:"#86efac",fontSize:12,marginBottom:6}}>Meta: <span style={S.xpTag}>+{XP_ANNUAL} XP</span>{"  "}Sub-tarea: <span style={S.xpTag}>+{XP_ANNUAL} XP</span></div>
+            <div style={{color:"#fbbf24",fontSize:15,fontWeight:"bold"}}>XP Anuales ganados: {annualXP}</div>
+          </div>
+          {annualGoals.map((goal,gi)=>(
+            <AnnualGoalCard key={gi} goal={goal} index={gi} S={S} xpTag={S.xpTag}
+              onChangeTitle={val=>{const g=[...annualGoals];g[gi]={...g[gi],title:val};saveAnnual(g);}}
+              onToggleGoal={()=>{const g=[...annualGoals];g[gi]={...g[gi],done:!g[gi].done};saveAnnual(g);}}
+              onChangeSubtask={(si,val)=>{const g=[...annualGoals];g[gi]={...g[gi],subtasks:[...g[gi].subtasks]};g[gi].subtasks[si]=val;saveAnnual(g);}}
+              onToggleSubtask={(si)=>{const g=[...annualGoals];g[gi]={...g[gi],subtasksDone:[...g[gi].subtasksDone]};g[gi].subtasksDone[si]=!g[gi].subtasksDone[si];saveAnnual(g);}}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* --- PESTAÑA: SIDE QUESTS --- */}
+      {tab==="side"&&(
+        <div style={S.section}>
+          <div style={S.card}>
+            <div style={S.cardTitle}>🌟 Side Quests <span style={S.xpTag}>+{XP_SIDE} XP</span></div>
+            {sideQuests.map((sq,i)=>(
+              <div key={i} style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+                <span style={{color:"#6d28d9",fontSize:12,minWidth:20,textAlign:"right",fontWeight:"bold"}}>{i+1}</span>
+                <input style={{...S.input,flex:1,color:sq.done?"#4ade80":"#f0e8ff",textDecoration:sq.done?"line-through":"none"}}
+                  placeholder={`Side quest ${i+1}`} value={sq.task}
+                  onChange={e=>{const q=[...sideQuests];q[i]={...q[i],task:e.target.value};saveSide(q);}}/>
+                <div style={{...S.check(sq.done),cursor:"pointer",flexShrink:0}} onClick={()=>{const q=[...sideQuests];q[i]={...q[i],done:!q[i].done};saveSide(q);}}>
+                  {sq.done?"✓":""}
+                </div>
+                {sq.done&&<span style={{...S.xpTag,whiteSpace:"nowrap"}}>+{XP_SIDE}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --- PESTAÑA: ESTADÍSTICAS --- */}
+      {tab==="stats"&&(
+        <div style={S.section}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            {[["⚔️ NIVEL",level],["⚡ XP TOTAL",totalXP],["🗡️ XP HÁBITOS",habitsXP],["🏆 XP ANUALES",annualXP],["🌟 XP SIDE",sideXP],["📅 XP ESTE MES",monthXP]].map(([l,v])=>(
+              <div key={l} style={S.statBox}>
+                <div style={{color:"#c084fc",fontSize:22,fontWeight:"bold"}}>{v}</div>
+                <div style={{color:"#8b5cf6",fontSize:10,letterSpacing:2,marginTop:4,fontWeight:"bold"}}>{l}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{...S.card,borderColor:"#92400e"}}>
+            <div style={{...S.cardTitle,color:"#fbbf24"}}>🎁 Premios por Nivel</div>
+            {Array.from({length:10},(_,i)=>{
+              const lvl=i+1,unlocked=level>=lvl,current=level===lvl,next=level+1===lvl;
+              return(
+                <div key={lvl} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:8,marginBottom:6,
+                  background:current?"#1c1505":unlocked?"#0a1505":"#0a0118",
+                  border:`1px solid ${current?"#f59e0b":unlocked?"#16a34a":next?"#4c1d95":"#1e0a3c"}`,
+                  opacity:(!unlocked&&!next)?0.6:1}}>
+                  <span style={{fontSize:16,minWidth:24,textAlign:"center"}}>{LEVEL_EMOJIS[lvl]}</span>
+                  <div style={{flex:1}}>
+                    <div style={{color:rewards[i]?(unlocked?"#fde68a":"#ddd6fe"):"#6d28d9",fontSize:13,fontStyle:rewards[i]?"normal":"italic"}}>
+                      {rewards[i]||"Sin premio definido"}
+                    </div>
+                  </div>
+                  <div style={{color:"#6d28d9",fontSize:11,whiteSpace:"nowrap",fontWeight:"bold"}}>{LEVEL_XP[i]} XP</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* --- PESTAÑA: CONFIGURACIÓN --- */}
+      {tab==="config"&&(
+        <div style={S.section}>
+          <div style={S.card}>
+            <div style={S.cardTitle}>👤 Tu Perfil</div>
+            {[["NOMBRE","name","Tu nombre de héroe","text"],["EDAD","age","Edad","number"]].map(([label,key,ph,type])=>(
+              <div key={key} style={{marginBottom:12}}>
+                <label style={S.label}>{label}</label>
+                <input style={S.input} value={tempProfile[key]||""} type={type} onChange={e=>setTempProfile(p=>({...p,[key]:e.target.value}))} placeholder={ph}/>
+              </div>
+            ))}
+          </div>
+          <div style={S.card}>
+            <div style={S.cardTitle}>🗡️ Hábitos (máx. {MAX_HABITS})</div>
+            {tempHabits.map((h,i)=>(
+              <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"center"}}>
+                <span style={{color:"#6d28d9",fontSize:12,minWidth:20,textAlign:"right",fontWeight:"bold"}}>{i+1}</span>
+                <input style={S.input} value={h} onChange={e=>{const arr=[...tempHabits];arr[i]=e.target.value;setTempHabits(arr);}} placeholder={`Hábito ${i+1}`}/>
+              </div>
+            ))}
+          </div>
+          <div style={{...S.card,borderColor:"#92400e"}}>
+            <div style={{...S.cardTitle,color:"#fbbf24"}}>🎁 Premios por Nivel</div>
+            <div style={{color:"#8b5cf6",fontSize:12,marginBottom:14,fontWeight:"bold"}}>¿Qué te regalás cuando llegás a cada nivel?</div>
+            {tempRewards.map((r,i)=>{
+              const lvl=i+1,unlocked=level>=lvl;
+              return(
+                <div key={i} style={{display:"flex",gap:10,marginBottom:10,alignItems:"center"}}>
+                  <span style={{fontSize:16,minWidth:24,textAlign:"center"}}>{LEVEL_EMOJIS[lvl]}</span>
+                  <span style={{color:unlocked?"#4ade80":level+1===lvl?"#a855f7":"#8b5cf6",fontSize:12,minWidth:52,letterSpacing:1,fontWeight:"bold"}}>LVL {lvl}</span>
+                  <input style={{...S.input,borderColor:unlocked?"#14532d":level+1===lvl?"#4c1d95":"#2d1060"}}
+                    value={r} onChange={e=>{const arr=[...tempRewards];arr[i]=e.target.value;setTempRewards(arr);}}
+                    placeholder={`Premio nivel ${lvl}...`}/>
+                </div>
+              );
+            })}
+          </div>
+          <button style={S.btn(saved?"success":"primary")} onClick={saveProfile}>
+            {saved?"✓ GUARDADO EN LA NUBE":"💾 GUARDAR TODO"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Componentes secundarios (No tocar)
+function WeeklySection({weeklyQuests,toggleWeekly,setWeeklyTask,S}){
+  const [activeWeek,setActiveWeek]=useState(1);
+  const wq=weeklyQuests[activeWeek]||{tasks:["","","","",""],done:[false,false,false,false,false]};
+  return(
+    <>
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+        {[1,2,3,4].map(w=>(<button key={w} style={S.weekTab(activeWeek===w)} onClick={()=>setActiveWeek(w)}>SEMANA {w}</button>))}
+      </div>
+      {wq.tasks.map((task,i)=>(
+        <div key={i} style={{marginBottom:10}}>
+          <input style={{...S.input,marginBottom:6}} placeholder={`Tarea semanal ${i+1}`} value={task} onChange={e=>setWeeklyTask(activeWeek,i,e.target.value)}/>
+          <div style={S.questRow(wq.done[i])} onClick={()=>toggleWeekly(activeWeek,i)}>
+            <div style={S.check(wq.done[i])}>{wq.done[i]?"✓":""}</div>
+            <div style={{color:wq.done[i]?"#4ade80":"#ddd6fe",flex:1,fontSize:14,textDecoration:wq.done[i]?"line-through":"none"}}>{task||`Tarea ${i+1}`}</div>
+            {wq.done[i]&&<span style={{color:"#fbbf24",fontSize:12,fontWeight:"bold"}}>+3 XP ✨</span>}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function AnnualGoalCard({goal,index,S,xpTag,onChangeTitle,onToggleGoal,onChangeSubtask,onToggleSubtask}){
+  const [open,setOpen]=useState(false);
+  const subtasksDone=goal.subtasksDone.filter(Boolean).length;
+  return(
+    <div style={{...S.card,borderColor:goal.done?"#14532d":"#2d1060",background:goal.done?"#0a1a0a":"#150330",marginBottom:12}}>
+      <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+        <span style={{color:"#6d28d9",fontSize:13,minWidth:22,paddingTop:8,fontWeight:"bold"}}>{index+1}</span>
+        <div style={{flex:1}}>
+          <input style={{...S.input,marginBottom:8,color:goal.done?"#4ade80":"#f0e8ff"}} placeholder={`Meta anual ${index+1}`} value={goal.title} onChange={e=>onChangeTitle(e.target.value)}/>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{...S.check(goal.done),cursor:"pointer"}} onClick={onToggleGoal}>{goal.done?"✓":""}</div>
+            <span style={{color:goal.done?"#4ade80":"#8b5cf6",fontSize:13}}>{goal.done?"¡Meta completada!":"Marcar completada"}</span>
+            <button style={{...S.btn(""),padding:"4px 12px",fontSize:11,marginLeft:"auto"}} onClick={()=>setOpen(!open)}>
+              {open?"▲":"▼"} SUB-TAREAS ({subtasksDone}/{goal.subtasks.length})
+            </button>
+          </div>
+        </div>
+      </div>
+      {open&&(
+        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #2d1060"}}>
+          {goal.subtasks.map((st,si)=>(
+            <div key={si} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+              <div style={{...S.check(goal.subtasksDone[si]),cursor:"pointer",flexShrink:0}} onClick={()=>onToggleSubtask(si)}>{goal.subtasksDone[si]?"✓":""}</div>
+              <input style={{...S.input,textDecoration:goal.subtasksDone[si]?"line-through":"none",color:goal.subtasksDone[si]?"#4ade80":"#f0e8ff"}}
+                placeholder={`Sub-tarea ${si+1}`} value={st} onChange={e=>onChangeSubtask(si,e.target.value)}/>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
 </body>
 </html>
