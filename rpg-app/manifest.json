@@ -1,0 +1,16 @@
+{
+  "short_name": "RPG Habit",
+  "name": "RPG Habit Tracker ⚔️",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "theme_color": "#7c3aed",
+  "background_color": "#0a0118",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "./icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
