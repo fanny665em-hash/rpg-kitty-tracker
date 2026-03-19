@@ -37,7 +37,8 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const USER_ID = "jugador_1"; 
 
-const { useState, useEffect, useCallback } = React;
+// IMPORTANTE: Agregamos useRef para el sistema anti-bugs
+const { useState, useEffect, useCallback, useRef } = React;
 
 // --- 2. CONSTANTES DEL JUEGO ---
 const MONTHS_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -80,9 +81,21 @@ function App(){
   const [tempHabits,setTempHabits]=useState(Array(MAX_HABITS).fill(""));
   const [tempRewards,setTempRewards]=useState(defaultRewards());
 
+  // ESTADO NUEVO PARA EL ESCUDO ANTI-BUGS
+  const [isLoaded, setIsLoaded] = useState(false);
+  const autoSaveTimer = useRef(null);
+
   const monthKey=`month:${yr}-${String(mo+1).padStart(2,"00")}`;
 
-  // --- 3. CARGA CORREGIDA: LECTURA ÚNICA ---
+  function calcMonthXP(data){
+    let xp=0;
+    Object.values(data.daily||{}).forEach(arr=>arr.forEach(d=>{if(d)xp+=XP_DAILY;}));
+    Object.values(data.weeklyQuests||{}).forEach(wq=>wq.done.forEach(d=>{if(d)xp+=XP_WEEKLY;}));
+    if(data.monthlyQuest?.done) xp+=XP_MONTHLY;
+    return xp;
+  }
+
+  // --- 3. CARGA SEGURA AL ABRIR LA APP ---
   useEffect(() => {
     async function cargarDatos() {
       const docSnap = await getDoc(doc(db, "usuarios", USER_ID));
@@ -100,33 +113,79 @@ function App(){
           setMonthData({daily:{},weeklyQuests:defaultWeekly(),monthlyQuest:defaultMonthly(),notes:""});
         }
       }
+      setIsLoaded(true); // Termina de cargar
     }
     cargarDatos();
   }, [monthKey]);
 
-  // --- 4. GUARDADO EN FIREBASE ---
-  const syncToCloud = async (updates) => {
-    await setDoc(doc(db, "usuarios", USER_ID), updates, { merge: true });
+  // --- 4. AUTO-GUARDADO INTELIGENTE ---
+  // Se dispara automáticamente 800 milisegundos después de tu ÚLTIMO click
+  useEffect(() => {
+    if (!isLoaded) return; // Si no cargó, no guardes nada vacío
+    
+    clearTimeout(autoSaveTimer.current); // Cancela el guardado anterior si tocás rápido
+    autoSaveTimer.current = setTimeout(() => {
+      const mxp = calcMonthXP(monthData);
+      const newAllXP = {...allMonthsXP, [monthKey]: mxp};
+      setAllMonthsXP(newAllXP);
+      
+      setDoc(doc(db, "usuarios", USER_ID), {
+        [`months.${monthKey}`]: monthData,
+        allMonthsXP: newAllXP,
+        annualGoals: annualGoals,
+        sideQuests: sideQuests
+      }, { merge: true });
+      
+    }, 800); // El escudo de tiempo
+  }, [monthData, annualGoals, sideQuests, isLoaded, monthKey, allMonthsXP]);
+
+  // --- 5. FUNCIONES A PRUEBA DE CLICKS RÁPIDOS ---
+  // Al usar "prev =>", leemos directamente la memoria interna, imposible pisarse.
+  const toggleHabit = (day, idx) => {
+    setMonthData(prev => {
+      const nd = { ...prev.daily };
+      if (!nd[day]) nd[day] = Array(MAX_HABITS).fill(false);
+      else nd[day] = [...nd[day]];
+      nd[day][idx] = !nd[day][idx];
+      return { ...prev, daily: nd };
+    });
+  };
+  
+  const toggleWeekly = (week, idx) => {
+    setMonthData(prev => {
+      const nw = { ...prev.weeklyQuests, [week]: { ...prev.weeklyQuests[week], done: [...prev.weeklyQuests[week].done] } };
+      nw[week].done[idx] = !nw[week].done[idx];
+      return { ...prev, weeklyQuests: nw };
+    });
+  };
+  
+  const setWeeklyTask = (week, idx, val) => {
+    setMonthData(prev => {
+      const nw = { ...prev.weeklyQuests, [week]: { ...prev.weeklyQuests[week], tasks: [...prev.weeklyQuests[week].tasks] } };
+      nw[week].tasks[idx] = val;
+      return { ...prev, weeklyQuests: nw };
+    });
   };
 
-  function calcMonthXP(data){
-    let xp=0;
-    Object.values(data.daily||{}).forEach(arr=>arr.forEach(d=>{if(d)xp+=XP_DAILY;}));
-    Object.values(data.weeklyQuests||{}).forEach(wq=>wq.done.forEach(d=>{if(d)xp+=XP_WEEKLY;}));
-    if(data.monthlyQuest?.done) xp+=XP_MONTHLY;
-    return xp;
-  }
+  const toggleMonthly = () => {
+    setMonthData(prev => ({ ...prev, monthlyQuest: { ...prev.monthlyQuest, done: !prev.monthlyQuest.done } }));
+  };
 
-  const saveMonth = useCallback((data)=>{
-    setMonthData(data);
-    const mxp=calcMonthXP(data);
-    const newAllXP={...allMonthsXP,[monthKey]:mxp};
-    setAllMonthsXP(newAllXP);
-    syncToCloud({
-      allMonthsXP: newAllXP,
-      [`months.${monthKey}`]: data
-    });
-  },[monthKey,allMonthsXP]);
+  const setMonthlyTask = (val) => {
+    setMonthData(prev => ({ ...prev, monthlyQuest: { ...prev.monthlyQuest, task: val } }));
+  };
+
+  const setNotes = (val) => {
+    setMonthData(prev => ({ ...prev, notes: val }));
+  };
+
+  const saveProfile = async () => {
+    setProfile(tempProfile); setHabits(tempHabits); setRewards(tempRewards);
+    await setDoc(doc(db, "usuarios", USER_ID), {
+      profile: tempProfile, habits: tempHabits, rewards: tempRewards
+    }, { merge: true });
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
 
   const annualXP=annualGoals.reduce((acc,g)=>{if(g.done)acc+=XP_ANNUAL;g.subtasksDone.forEach(d=>{if(d)acc+=XP_ANNUAL;});return acc;},0);
   const sideXP=sideQuests.reduce((acc,sq)=>sq.done?acc+XP_SIDE:acc,0);
@@ -145,40 +204,6 @@ function App(){
   });
 
   const changeMonth=(dir)=>{let nm=mo+dir,ny=yr;if(nm<0){nm=11;ny--;}if(nm>11){nm=0;ny++;}setMo(nm);setYr(ny);};
-  const toggleHabit=(day,idx)=>{
-    setMonthData(prev => {
-      const nd={...prev.daily};
-      if(!nd[day])nd[day]=Array(MAX_HABITS).fill(false);
-      else nd[day]=[...nd[day]];
-      nd[day][idx]=!nd[day][idx];
-      const newData = {...prev, daily:nd};
-      saveMonth(newData);
-      return newData;
-    });
-  };
-  
-  const toggleWeekly=(week,idx)=>{
-    setMonthData(prev => {
-      const nw={...prev.weeklyQuests,[week]:{...prev.weeklyQuests[week],done:[...prev.weeklyQuests[week].done]}};
-      nw[week].done[idx]=!nw[week].done[idx];
-      const newData = {...prev, weeklyQuests:nw};
-      saveMonth(newData);
-      return newData;
-    });
-  };
-  
-  const setWeeklyTask=(week,idx,val)=>{const nw={...weeklyQuests,[week]:{...weeklyQuests[week],tasks:[...weeklyQuests[week].tasks]}};nw[week].tasks[idx]=val;saveMonth({...monthData,weeklyQuests:nw});};
-  const toggleMonthly=()=>{saveMonth({...monthData,monthlyQuest:{...monthlyQuest,done:!monthlyQuest.done}});};
-  const setMonthlyTask=(val)=>{saveMonth({...monthData,monthlyQuest:{...monthlyQuest,task:val}});};
-  const setNotes=(val)=>{saveMonth({...monthData,notes:val});};
-  const saveAnnual=(goals)=>{setAnnualGoals(goals);syncToCloud({annualGoals: goals});};
-  const saveSide=(quests)=>{setSideQuests(quests);syncToCloud({sideQuests: quests});};
-  const saveProfile=()=>{
-    setProfile(tempProfile);setHabits(tempHabits);setRewards(tempRewards);
-    syncToCloud({profile: tempProfile, habits: tempHabits, rewards: tempRewards});
-    setSaved(true);setTimeout(()=>setSaved(false),2000);
-  };
-
   const monthXP=calcMonthXP(monthData);
 
   // --- ESTILOS DE LA APP ---
@@ -338,16 +363,10 @@ function App(){
           </div>
           {annualGoals.map((goal,gi)=>(
             <AnnualGoalCard key={gi} goal={goal} index={gi} S={S} xpTag={S.xpTag}
-              onChangeTitle={val=>{const g=[...annualGoals];g[gi]={...g[gi],title:val};saveAnnual(g);}}
-              onToggleGoal={()=>{const g=[...annualGoals];g[gi]={...g[gi],done:!g[gi].done};saveAnnual(g);}}
-              onChangeSubtask={(si,val)=>{const g=[...annualGoals];g[gi]={...g[gi],subtasks:[...g[gi].subtasks]};g[gi].subtasks[si]=val;saveAnnual(g);}}
-              onToggleSubtask={(si)=>{
-                const g=[...annualGoals];
-                // Crear una copia nueva del array de subtasksDone para evitar bugs al tildar rápido
-                g[gi] = {...g[gi], subtasksDone: [...g[gi].subtasksDone]};
-                g[gi].subtasksDone[si]=!g[gi].subtasksDone[si];
-                saveAnnual(g);
-              }}
+              onChangeTitle={val=>{setAnnualGoals(prev=>{const g=[...prev];g[gi]={...g[gi],title:val};return g;})}}
+              onToggleGoal={()=>{setAnnualGoals(prev=>{const g=[...prev];g[gi]={...g[gi],done:!g[gi].done};return g;})}}
+              onChangeSubtask={(si,val)=>{setAnnualGoals(prev=>{const g=[...prev];g[gi]={...g[gi],subtasks:[...g[gi].subtasks]};g[gi].subtasks[si]=val;return g;})}}
+              onToggleSubtask={(si)=>{setAnnualGoals(prev=>{const g=[...prev];g[gi]={...g[gi],subtasksDone:[...g[gi].subtasksDone]};g[gi].subtasksDone[si]=!g[gi].subtasksDone[si];return g;})}}
             />
           ))}
         </div>
@@ -363,12 +382,9 @@ function App(){
                 <span style={{color:"#6d28d9",fontSize:12,minWidth:20,textAlign:"right",fontWeight:"bold"}}>{i+1}</span>
                 <input style={{...S.input,flex:1,color:sq.done?"#4ade80":"#f0e8ff",textDecoration:sq.done?"line-through":"none"}}
                   placeholder={`Side quest ${i+1}`} value={sq.task}
-                  onChange={e=>{const q=[...sideQuests];q[i]={...q[i],task:e.target.value};saveSide(q);}}/>
+                  onChange={e=>{const val=e.target.value;setSideQuests(prev=>{const q=[...prev];q[i]={...q[i],task:val};return q;})}}/>
                 <div style={{...S.check(sq.done),cursor:"pointer",flexShrink:0}} onClick={()=>{
-                  // Evitar pisar el estado al hacer click rápido
-                  const q=[...sideQuests];
-                  q[i]={...q[i],done:!q[i].done};
-                  saveSide(q);
+                  setSideQuests(prev=>{const q=[...prev];q[i]={...q[i],done:!q[i].done};return q;});
                 }}>
                   {sq.done?"✓":""}
                 </div>
